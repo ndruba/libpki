@@ -240,6 +240,12 @@ int gen_keypair ( PKI_TOKEN *tk, int bits, char *param_s,
 	// If specified, search the profile among the ones already loaded
 	if (profile_s) prof = PKI_TOKEN_search_profile( tk, profile_s );
 
+	// Sanity Check
+	if (profile_s && !prof) {
+		PKI_log_debug("Detected Issue: profile %s was selected, but could not be found!");
+		exit(1);
+	}
+
 	// Let's now generate the new key parameters
 	if ((kp = PKI_KEYPARAMS_new(scheme, prof)) == NULL)
 	{
@@ -598,10 +604,27 @@ int main (int argc, char *argv[] ) {
 			if( verbose ) printf("Loading SignCert...");
 			fflush( stdout );
 
-			if((PKI_TOKEN_load_cert( tk, signcert )) == PKI_ERR) {
-					fprintf(stderr, "ERROR: Can not load signcert (%s)\n\n",
-						signcert );
+			// If we are generating a REQ, we can use the
+			// signcert as the CA cert to provide the needed
+			// info for, for example, the authorityKeyIdentifier
+
+			if ( strncmp_nocase("genreq", cmd, 6) == 0 ) {
+				// Loads the CA certificate via the signing cert
+				// to calculate the value of certain extensions
+				if ((PKI_TOKEN_load_cacert(tk, signcert)) == PKI_ERR) {
+					fprintf(stderr, "ERROR, cannot add the signcert as the CA cert (%s)", signcert);
 					exit(1);
+				}
+
+			} else {
+				
+				// Loads the Certificate as the user certificate
+				// for generic signing operations
+				if((PKI_TOKEN_load_cert( tk, signcert )) == PKI_ERR) {
+						fprintf(stderr, "ERROR: Can not load signcert (%s)\n\n",
+							signcert );
+						exit(1);
+				}
 			}
 		}
 
@@ -808,7 +831,9 @@ int main (int argc, char *argv[] ) {
 
 		PKI_TOKEN_login( tk );
 
-		if (strncmp_nocase(algor_opt, "RSA", 3) == 0) {
+		if (!algor_opt) {
+			algor_opt = "RSA";
+		} else if (strncmp_nocase(algor_opt, "RSA", 3) == 0) {
 			algor_opt = "RSA";
 		} else if (strncmp_nocase(algor_opt, "EC", 2) == 0) {
 			algor_opt = "EC";
